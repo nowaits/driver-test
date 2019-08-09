@@ -1,0 +1,41 @@
+#
+# usage: astyle --project=cpp-style-conf *.cpp,*.c,*.h
+# doc: astyle --help or http://astyle.sourceforge.net/astyle.html
+#
+
+--mode=c
+
+# 大括号风格
+--style=1tbs
+--attach-closing-while
+
+# 缩进
+--indent-after-parens
+--indent-labels
+--indent-preproc-block
+--indent-preproc-define
+--indent-col1-comments
+
+# padding
+--pad-oper
+--pad-header
+--unpad-paren
+
+# 变量定义
+--align-pointer=name
+--align-reference=name
+
+#
+--break-one-line-headers
+--add-braces
+
+# tab 4个空格替换
+--indent=spaces=4
+--convert-tabs
+
+--max-code-length=100
+--break-after-logical
+
+# 选项
+--recursive
+--suffix=none
