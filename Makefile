@@ -11,9 +11,10 @@ projects = \
 	sockopt \
 	top \
 	k70 \
-	cdev
+	cdev \
+	mem_alloc \
 
-projects = k70
+# projects = mem_alloc
 
 all clean install uninstall:
 	@for i in $(projects) ; do \

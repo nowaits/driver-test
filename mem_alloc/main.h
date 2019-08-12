@@ -18,10 +18,9 @@
 #include <linux/sysfs.h>
 
 #include <linux/stat.h>
-#include <linux/mm.h>
-#include <linux/cdev.h>
 #include <linux/slab.h>
-#include <linux/pci.h>
+#include <linux/mm.h>
+#include <linux/fs.h>
 
 typedef unsigned long long u64;
 typedef unsigned int u32;
@@ -33,23 +32,6 @@ typedef int i32;
 typedef short i16;
 typedef char i8;
 
-typedef struct {
-    struct proc_dir_entry *base_dir;
-    void *pci_mem ;
-    u32 pci_mems;
-    void *mem ;
-    u32 mems;
-    const i8 *root_path;
-    const i8 *pci_path;
-    const i8 *mem_path;
-
-    struct pci_dev *pci_dev;
-} mconfig_t;
-
-extern mconfig_t *mconfig;
-
-#define PRINT(fmt, ...) printk("%s:%d:" fmt, __FUNCTION__, __LINE__, ##__VA_ARGS__)
-
-#define always_inline static inline __attribute__ ((__always_inline__))
+#define PRINT(LEVEL, fmt, ...) printk(KERN_##LEVEL "%s:%d:" fmt, __FUNCTION__, __LINE__, ##__VA_ARGS__)
 
 #endif // __MAIN_H__
