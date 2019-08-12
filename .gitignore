@@ -6,6 +6,7 @@
 *.ko
 *.o
 *.mod.c
+*.o.d
 *.unsigned
 *.out
 test

@@ -14,7 +14,7 @@ projects = \
 	cdev \
 	mem_alloc \
 
-# projects = mem_alloc
+projects = mem_alloc
 
 all clean install uninstall:
 	@for i in $(projects) ; do \

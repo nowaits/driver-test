@@ -3,19 +3,40 @@
 typedef struct {
     struct {
         void *vmem;
+        void *pmem;
         u32 msize;
     };
 } file_private_data_t;
 
 #define FILE_PRIVATE_DATA(f) ((file_private_data_t*)((struct seq_file *)f->private_data)->private)
 
+void reserve_pages(void *mem, u32 size)
+{
+    while (size > 0) {
+        SetPageReserved(virt_to_page(mem));
+        mem += PAGE_SIZE / (sizeof(mem[0]));
+        size -= PAGE_SIZE;
+    }
+}
+
+void
+clear_reserve_pages(void *mem, u32 size)
+{
+    while (size > 0) {
+        ClearPageReserved(virt_to_page(mem));
+        mem += PAGE_SIZE / (sizeof(mem[0]));
+        size -= PAGE_SIZE;
+    }
+}
+
 inline void
 _release_vmem(file_private_data_t *fpd)
 {
-    ClearPageReserved(virt_to_page(fpd->vmem));
+    clear_reserve_pages(fpd->vmem, fpd->msize);
     free_pages((unsigned long)fpd->vmem, get_order(fpd->msize / PAGE_SIZE));
 
     fpd->vmem = NULL;
+    fpd->pmem = NULL;
     fpd->msize = 0;
 }
 
@@ -26,7 +47,7 @@ _shm_mm_close(struct vm_area_struct *vma)
 
     PRINT(INFO, "mem freed: start 0x%lx s = %lx, 0x%p = 0x%p ok.\n",
         vma->vm_start, vma->vm_end - vma->vm_start,
-        fpd->vmem, (void *)__pa(fpd->vmem));
+        fpd->vmem, fpd->pmem);
 
     _release_vmem(fpd);
 }
@@ -53,8 +74,11 @@ _proc_mmap(struct file *f, struct vm_area_struct *vma)
         return -1;
     }
 
+    fpd->pmem = (void *)__pa(fpd->vmem);
+    reserve_pages(fpd->vmem, fpd->msize);
+
     //map
-    if (remap_pfn_range(vma, vma->vm_start, __pa(fpd->vmem) >> PAGE_SHIFT,
+    if (remap_pfn_range(vma, vma->vm_start, ((u64)fpd->pmem) >> PAGE_SHIFT,
             fpd->msize, vma->vm_page_prot)) {
         PRINT(ERR, "remap mem:[0x%p] failed!\n", fpd->vmem);
 
@@ -67,7 +91,7 @@ _proc_mmap(struct file *f, struct vm_area_struct *vma)
     vma->vm_private_data = fpd;
 
     PRINT(INFO, "map [ 0x%p => 0x%p ] -> 0x%p len=%x ok.\n",
-        fpd->vmem, (void *)__pa(fpd->vmem),
+        fpd->vmem, fpd->pmem,
         (void *)vma->vm_start, fpd->msize);
     return 0;
 }
@@ -82,7 +106,7 @@ _proc_show(struct seq_file *sf, void *v)
         return 0;
     }
 
-    seq_printf(sf, "vmem=0x%p pmem=0x%p size=0x%x\n", fpd->vmem, (void *)__pa(fpd->vmem), fpd->msize);
+    seq_printf(sf, "vmem=0x%p pmem=0x%p size=0x%x\n", fpd->vmem, fpd->pmem, fpd->msize);
     return 0;
 }
 

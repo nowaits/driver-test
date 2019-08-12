@@ -39,3 +39,8 @@
 # 选项
 --recursive
 --suffix=none
+
+#
+--formatted
+--preserve-date
+--lineend=linux
