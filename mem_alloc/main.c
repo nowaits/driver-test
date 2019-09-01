@@ -76,9 +76,68 @@ _proc_rlease(struct inode *inode, struct file *file)
 {
 
     module_put(THIS_MODULE);
-    PRINT(INFO, "put module %d", module_refcount(THIS_MODULE));
+    PRINT(INFO, "put module %u", module_refcount(THIS_MODULE));
 
     return single_release(inode, file);;
+}
+
+static void
+reset()
+{
+    PRINT(INFO, "success");
+}
+
+typedef struct {
+    char *cmd;
+    void (*proc)(void);
+} cmd_t;
+
+static ssize_t
+_proc_write(struct file *file, const char __user *buffer,
+    size_t count, loff_t *pos)
+{
+    int res;
+    char *buf = (char *) __get_free_page(GFP_USER);
+    int i;
+
+    cmd_t cmds[] = {
+        {"reset", reset},
+    };
+
+    if (!buf) {
+        return -ENOMEM;
+    }
+
+    res = -EINVAL;
+    if (count >= PAGE_SIZE) {
+        goto out;
+    }
+
+    res = -EFAULT;
+    if (copy_from_user(buf, buffer, count)) {
+        goto out;
+    }
+
+    buf[count] = 0;
+
+    for (i = 0; i < sizeof(cmds) / sizeof(cmds[0]); i++) {
+        cmd_t *c = cmds + i;
+
+        if (strncmp(buf, c->cmd, min(strlen(c->cmd) - 1, count)) == 0) {
+            c->proc();
+            res = count;
+            break;
+        }
+    }
+
+    if (res <= 0) {
+        res = -EINVAL;
+        PRINT(INFO, "invalid args: %s", buf);
+    }
+
+out:
+    free_page((unsigned long)buf);
+    return res;
 }
 
 static const struct file_operations proc_fops = {
@@ -88,19 +147,20 @@ static const struct file_operations proc_fops = {
     .llseek = seq_lseek,
     .release = _proc_rlease,
     .mmap = _proc_mmap,
+    .write = _proc_write,
 };
 
 #define PROC_TEST "mem_alloc"
-#include <asm-generic/local.h>
+
 static int
 _proc_init(void)
 {
     int cpu;
     mem = (char *)kzalloc(msize, GFP_DMA);
-    proc_create(PROC_TEST, 0, NULL, &proc_fops);
+    proc_create(PROC_TEST, 0644 /*0644/*S_IRWXUGO*/, NULL, &proc_fops);
     PRINT(INFO, "alloc: %p=>%p\n", (void *)__pa(mem), mem);
     PRINT(INFO, "module state: %d", THIS_MODULE->state);
-    PRINT(INFO, "module name: %s", THIS_MODULE->name);
+    PRINT(INFO, "module name: %s %s", THIS_MODULE->name, KBUILD_MODNAME);
     PRINT(INFO, "module version:%s", THIS_MODULE->version);
 
     return 0;
@@ -117,7 +177,11 @@ _proc_exit(void)
     PRINT(INFO, "EXIT");
 }
 
-MODULE_LICENSE("GPL");
+MODULE_DESCRIPTION(KBUILD_MODNAME);
+MODULE_VERSION("0.0.1");
+MODULE_LICENSE("Dual BSD/GPL");
+MODULE_AUTHOR("XDJA");
+
 module_init(_proc_init);
 module_exit(_proc_exit);
 

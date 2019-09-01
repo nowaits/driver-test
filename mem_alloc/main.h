@@ -6,6 +6,7 @@
 #include <linux/seq_file.h>
 #include <linux/slab.h>
 #include <linux/mm.h>
+#include <linux/uaccess.h>
 
 typedef unsigned long long u64;
 typedef unsigned int u32;
