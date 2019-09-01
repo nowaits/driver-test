@@ -17,6 +17,6 @@ typedef int i32;
 typedef short i16;
 typedef char i8;
 
-#define PRINT(LEVEL, fmt, ...) printk(KERN_##LEVEL "%s:%d:" fmt, __FUNCTION__, __LINE__, ##__VA_ARGS__)
+#define PRINT(LEVEL, fmt, ...) printk(KERN_##LEVEL "%s:%d:" fmt "\n", __FUNCTION__, __LINE__, ##__VA_ARGS__)
 
 #endif // __MAIN_H__

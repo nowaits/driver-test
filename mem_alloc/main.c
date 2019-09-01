@@ -1,55 +1,24 @@
 #include "main.h"
 
-typedef struct {
-    struct {
-        void *vmem;
-        void *pmem;
-        u32 msize;
-    };
-} file_private_data_t;
-
-#define FILE_PRIVATE_DATA(f) ((file_private_data_t*)((struct seq_file *)f->private_data)->private)
-
-void reserve_pages(void *mem, u32 size)
-{
-    while (size > 0) {
-        SetPageReserved(virt_to_page(mem));
-        mem += PAGE_SIZE / (sizeof(mem[0]));
-        size -= PAGE_SIZE;
-    }
-}
-
-void
-clear_reserve_pages(void *mem, u32 size)
-{
-    while (size > 0) {
-        ClearPageReserved(virt_to_page(mem));
-        mem += PAGE_SIZE / (sizeof(mem[0]));
-        size -= PAGE_SIZE;
-    }
-}
-
-inline void
-_release_vmem(file_private_data_t *fpd)
-{
-    clear_reserve_pages(fpd->vmem, fpd->msize);
-    free_pages((unsigned long)fpd->vmem, get_order(fpd->msize / PAGE_SIZE));
-
-    fpd->vmem = NULL;
-    fpd->pmem = NULL;
-    fpd->msize = 0;
-}
+char *mem = NULL;
+int msize = 44;
 
 static void
 _shm_mm_close(struct vm_area_struct *vma)
 {
-    file_private_data_t *fpd = (file_private_data_t *)vma->vm_private_data;
+    int i = 0;
+    char buf[1024], *p = buf;
 
-    PRINT(INFO, "mem freed: start 0x%lx s = %lx, 0x%p = 0x%p ok.\n",
-        vma->vm_start, vma->vm_end - vma->vm_start,
-        fpd->vmem, fpd->pmem);
+    for (i = 0; i < msize; i++) {
+        int l = sprintf(p, "%0x%s", mem[i], i % 20 == 0 ? "\n" : " ");
+        if (l <= 0) {
+            break;
+        }
 
-    _release_vmem(fpd);
+        p += l;
+    }
+
+    PRINT(INFO, "close: %s", buf);
 }
 
 static const struct vm_operations_struct vm_ops = {
@@ -59,75 +28,57 @@ static const struct vm_operations_struct vm_ops = {
 static int
 _proc_mmap(struct file *f, struct vm_area_struct *vma)
 {
-    file_private_data_t *fpd = FILE_PRIVATE_DATA(f);
-
-    if (fpd->vmem) {
-        PRINT(ERR, "file is already maped!\n");
-        return -1;
-    }
-
-    fpd->msize = vma->vm_end - vma->vm_start;
-
-    if (NULL == (fpd->vmem = (void *)__get_free_pages(GFP_DMA/* GFP_KERNEL GFP_USER  GFP_DMA*/,
-                    get_order(fpd->msize / PAGE_SIZE)))) {
-        PRINT(ERR, "alloc kernel memory:[0x%x] failed!\n", fpd->msize);
-        return -1;
-    }
-
-    fpd->pmem = (void *)__pa(fpd->vmem);
-    reserve_pages(fpd->vmem, fpd->msize);
-
     //map
-    if (remap_pfn_range(vma, vma->vm_start, ((u64)fpd->pmem) >> PAGE_SHIFT,
-            fpd->msize, vma->vm_page_prot)) {
-        PRINT(ERR, "remap mem:[0x%p] failed!\n", fpd->vmem);
-
-        _release_vmem(fpd);
+    if (remap_pfn_range(vma, vma->vm_start, __pa(mem) >> PAGE_SHIFT,
+            vma->vm_end - vma->vm_start, vma->vm_page_prot)) {
+        PRINT(ERR, "remap mem:[0x%p] failed!\n", mem);
         return -1;
     }
 
     vma->vm_ops = &vm_ops;
     vma->vm_flags |=  VM_IO | VM_PFNMAP | VM_DONTEXPAND | VM_DONTDUMP;
-    vma->vm_private_data = fpd;
 
     PRINT(INFO, "map [ 0x%p => 0x%p ] -> 0x%p len=%x ok.\n",
-        fpd->vmem, fpd->pmem,
-        (void *)vma->vm_start, fpd->msize);
+        (void *)__pa(mem), mem,
+        (void *)vma->vm_start, msize);
+
     return 0;
 }
 
 static int
 _proc_show(struct seq_file *sf, void *v)
 {
-    file_private_data_t *fpd = sf->private;
+    int i = 0;
+    char buf[1024], *p = buf;
 
-    if (!fpd->vmem) {
-        seq_printf(sf, "Use mmap to alloc dma memory\n");
-        return 0;
+    for (i = 0; i < msize; i++) {
+        int l = sprintf(p, "%x%s", mem[i], i % 20 == 0 ? "\n" : " ");
+        if (l <= 0) {
+            break;
+        }
+
+        p += l;
     }
 
-    seq_printf(sf, "vmem=0x%p pmem=0x%p size=0x%x\n", fpd->vmem, fpd->pmem, fpd->msize);
+    seq_printf(sf, "%p=>%p: %s\n", (void *)__pa(mem), mem, buf);
     return 0;
 }
 
 static int
 _proc_open(struct inode *inode, struct  file *file)
 {
-    file_private_data_t *fpd = (file_private_data_t *)kzalloc(sizeof(file_private_data_t), GFP_KERNEL);
-    PRINT(INFO, "file open: %p %p.\n", file, fpd);
-
-    return single_open(file, _proc_show, fpd);
+    try_module_get(THIS_MODULE);
+    return single_open(file, _proc_show, NULL);
 }
 
 static int
 _proc_rlease(struct inode *inode, struct file *file)
 {
-    file_private_data_t *fpd = FILE_PRIVATE_DATA(file);
 
-    kfree(fpd);
+    module_put(THIS_MODULE);
+    PRINT(INFO, "put module %d", module_refcount(THIS_MODULE));
 
-    PRINT(INFO, "release %p\n", fpd);
-    return single_release(inode, file);
+    return single_release(inode, file);;
 }
 
 static const struct file_operations proc_fops = {
@@ -140,20 +91,30 @@ static const struct file_operations proc_fops = {
 };
 
 #define PROC_TEST "mem_alloc"
-
+#include <asm-generic/local.h>
 static int
 _proc_init(void)
 {
+    int cpu;
+    mem = (char *)kzalloc(msize, GFP_DMA);
     proc_create(PROC_TEST, 0, NULL, &proc_fops);
-    PRINT(INFO, "INIT\n");
+    PRINT(INFO, "alloc: %p=>%p\n", (void *)__pa(mem), mem);
+    PRINT(INFO, "module state: %d", THIS_MODULE->state);
+    PRINT(INFO, "module name: %s", THIS_MODULE->name);
+    PRINT(INFO, "module version:%s", THIS_MODULE->version);
+
     return 0;
 }
 
 static void
 _proc_exit(void)
 {
+    PRINT(INFO, "module state: %d", THIS_MODULE->state);
+    PRINT(INFO, "find_module bye...");
+
+    kfree(mem);
     remove_proc_entry(PROC_TEST, NULL);
-    PRINT(INFO, "EXIT\n");
+    PRINT(INFO, "EXIT");
 }
 
 MODULE_LICENSE("GPL");
